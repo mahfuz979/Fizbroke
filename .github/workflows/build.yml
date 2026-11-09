@@ -1,0 +1,539 @@
+name: Build APK
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: 8.9 }
+      - name: Create project files
+        run: |
+          mkdir -p app/src/main/java/com/aesthetic/launcher app/src/main/res/layout app/src/main/res/xml app/src/main/res/values app/src/main/res/drawable app/src/main/res/drawable-nodpi
+          cat > settings.gradle.kts <<'EOF_FILE'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "AestheticLauncher"
+          include(":app")
+          EOF_FILE
+          cat > build.gradle.kts <<'EOF_FILE'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.20" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
+          }
+          EOF_FILE
+          cat > gradle.properties <<'EOF_FILE'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2g
+          EOF_FILE
+          cat > app/build.gradle.kts <<'EOF_FILE'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+          android {
+              namespace = "com.aesthetic.launcher"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.aesthetic.launcher"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              buildFeatures { compose = true }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          dependencies {
+              implementation(platform("androidx.compose:compose-bom:2024.09.00"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.foundation:foundation")
+              implementation("androidx.activity:activity-compose:1.9.2")
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
+          }
+          EOF_FILE
+          cat > app/src/main/AndroidManifest.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <queries>
+                  <intent>
+                      <action android:name="android.intent.action.MAIN" />
+                      <category android:name="android.intent.category.LAUNCHER" />
+                  </intent>
+              </queries>
+              <application
+                  android:label="Aesthetic Launcher"
+                  android:icon="@drawable/ic_launcher"
+                  android:theme="@style/Theme.App">
+                  <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="subject_segmentation" />
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTask"
+                      android:stateNotNeeded="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.HOME" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <receiver android:name=".CutoutWidget" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                      </intent-filter>
+                      <meta-data android:name="android.appwidget.provider" android:resource="@xml/cutout_widget" />
+                  </receiver>
+              </application>
+          </manifest>
+          EOF_FILE
+          cat > app/src/main/res/values/themes.xml <<'EOF_FILE'
+          <resources>
+              <style name="Theme.App" parent="android:Theme.Material.Wallpaper.NoTitleBar">
+                  <item name="android:statusBarColor">@android:color/transparent</item>
+                  <item name="android:navigationBarColor">@android:color/transparent</item>
+              </style>
+          </resources>
+          EOF_FILE
+          cat > app/src/main/res/xml/cutout_widget.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+              android:minWidth="180dp"
+              android:minHeight="180dp"
+              android:updatePeriodMillis="0"
+              android:initialLayout="@layout/widget_cutout"
+              android:resizeMode="horizontal|vertical"
+              android:widgetCategory="home_screen" />
+          EOF_FILE
+          cat > app/src/main/res/drawable/widget_bg.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <gradient android:angle="315" android:startColor="#FF000000" android:endColor="#FF8A0000" />
+              <corners android:radius="28dp" />
+          </shape>
+          EOF_FILE
+          cat > app/src/main/res/layout/widget_cutout.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="@drawable/widget_bg"
+              android:padding="6dp">
+              <ImageView
+                  android:id="@+id/cutout"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:src="@drawable/ic_launcher"
+                  android:scaleType="fitCenter" />
+              <TextClock
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_gravity="top|start"
+                  android:layout_margin="10dp"
+                  android:format12Hour="hh:mm"
+                  android:format24Hour="HH:mm"
+                  android:textColor="#FFFFFF"
+                  android:textSize="30sp"
+                  android:fontFamily="sans-serif-light"
+                  android:shadowColor="#99000000"
+                  android:shadowRadius="6" />
+          </FrameLayout>
+          EOF_FILE
+          base64 -d > app/src/main/res/drawable-nodpi/ic_launcher.png <<'EOF_FILE'
+          iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAkFBMVEWcJyvRIiXsaWqXmJxnIyW9wc1vcHMpFhd6e4O3u8f3kpL3
+          zs+kS0w8PUB+gYvCP0MCAAD2AgX5+PotAABOAQCvAQHPAQJuAQHo6O2NAQHX2uPHytX5FBr5Jyz5R0rQ09z7VVf5Njr6HCIoJyhW
+          Vlfe4Oj8ZWYWFxdJSk02Njf5PUFMFhimp6y1trhmZmmIiY1AMSUXAAAAMHRSTlP/////////////////////////////////////
+          //////////////////////////9Ppz/1AAAHv0lEQVR42sWb53riOBRATUtIZnZXsmTJFQMmlITy/m+3ktzU3CCY+82PSUI4R1ft
+          fnL5Y0mBA6g2/MfkC4EXpl90AXotHzj4tXzg0Mf5hyw7ZVl2uFeA3r/7Z7u3c+S7efjpZXY9DRe4u/nHW+SakZ53+khH+IfH+3uj
+          wB380yx1myK8ZdIZjx3yCIy3yWa13k+duU1gOH93cdtjlmlZoOy8BZP1dDqdGwKDV59j5HaG/6b/ljj0JPvp5/RdnYZD+dnF7cF3
+          3UumjwVR9001A2co/83tFb7v+kdbDiDPgSYwoPsPl350Hq6rzwchEE/3n3NFYAD/9KcvPVfYWQTg9346lQUG8HfuID6Lf5RBEOcp
+          2O+lqeAM4F+H8b++Qj+V12eaC0C2IJgCD7Tfjy7n8yX1NXzIIvXP0htM4twgWe//6gJ9Zr+VHr2dikYedjPflVof5gb1MAgKPoxX
+          a02g1/S34c/q3pPNiiQUeCYQLqrjd1wJfK8cRaDX8mdZ+iNz6zumrtz+NI2+ruUILPkQblSBXvyzyb9ZExX5Ydn+lAuEl2oAVALJ
+          970kElgvso0MU1aveNQ6AHcNXRX6NT/iwacikvkwSdovKoEzSZJt/XoEDn5fPnP16+azWIRvPP9bRcBpF3BWmySpX88SMOvPB+Di
+          1807nBj++3azCz9qvhcpzaytbvQXwrVrSNCs3TdMZPIk3W0M7mGnN4AAAAASUVORK5CYII=
+          EOF_FILE
+          cat > app/src/main/java/com/aesthetic/launcher/Util.kt <<'EOF_FILE'
+          package com.aesthetic.launcher
+
+          import android.appwidget.AppWidgetManager
+          import android.appwidget.AppWidgetProvider
+          import android.content.ComponentName
+          import android.content.Context
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.net.Uri
+          import android.widget.RemoteViews
+          import com.google.mlkit.vision.common.InputImage
+          import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
+          import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
+          import java.io.File
+
+          fun cutoutFile(ctx: Context) = File(ctx.filesDir, "cutout.png")
+
+          fun loadCutoutBitmap(ctx: Context, max: Int = 1024): Bitmap? {
+              val f = cutoutFile(ctx)
+              if (!f.exists()) return null
+              val b = BitmapFactory.decodeFile(f.path) ?: return null
+              val s = max.toFloat() / maxOf(b.width, b.height)
+              return if (s < 1f) Bitmap.createScaledBitmap(b, (b.width * s).toInt(), (b.height * s).toInt(), true) else b
+          }
+
+          fun updateWidgets(ctx: Context) {
+              val mgr = AppWidgetManager.getInstance(ctx)
+              val ids = mgr.getAppWidgetIds(ComponentName(ctx, CutoutWidget::class.java))
+              CutoutWidget.render(ctx, mgr, ids)
+          }
+
+          class CutoutWidget : AppWidgetProvider() {
+              override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) = render(ctx, mgr, ids)
+
+              companion object {
+                  fun render(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
+                      val bmp = loadCutoutBitmap(ctx, 600)
+                      for (id in ids) {
+                          val rv = RemoteViews(ctx.packageName, R.layout.widget_cutout)
+                          if (bmp != null) rv.setImageViewBitmap(R.id.cutout, bmp)
+                          mgr.updateAppWidget(id, rv)
+                      }
+                  }
+              }
+          }
+
+          /** Removes the background using ML Kit and saves a transparent PNG. */
+          fun removeBackground(ctx: Context, uri: Uri, onDone: (Boolean) -> Unit) {
+              try {
+                  val src = ctx.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it) }
+                  val s = 1024f / maxOf(src.width, src.height)
+                  val bmp = if (s < 1f) Bitmap.createScaledBitmap(src, (src.width * s).toInt(), (src.height * s).toInt(), true) else src
+                  val seg = SubjectSegmentation.getClient(
+                      SubjectSegmenterOptions.Builder().enableForegroundBitmap().build()
+                  )
+                  seg.process(InputImage.fromBitmap(bmp, 0))
+                      .addOnSuccessListener { r ->
+                          val fg = r.foregroundBitmap
+                          if (fg == null) { onDone(false); return@addOnSuccessListener }
+                          cutoutFile(ctx).outputStream().use { fg.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                          updateWidgets(ctx)
+                          onDone(true)
+                      }
+                      .addOnFailureListener { onDone(false) }
+              } catch (e: Exception) {
+                  onDone(false)
+              }
+          }
+          EOF_FILE
+          cat > app/src/main/java/com/aesthetic/launcher/MainActivity.kt <<'EOF_FILE'
+          package com.aesthetic.launcher
+
+          import android.content.Context
+          import android.content.Intent
+          import android.hardware.Sensor
+          import android.hardware.SensorEvent
+          import android.hardware.SensorEventListener
+          import android.hardware.SensorManager
+          import android.os.Bundle
+          import android.widget.Toast
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.BackHandler
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.compose.setContent
+          import androidx.activity.enableEdgeToEdge
+          import androidx.activity.result.PickVisualMediaRequest
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.fadeIn
+          import androidx.compose.animation.fadeOut
+          import androidx.compose.animation.slideInVertically
+          import androidx.compose.animation.slideOutVertically
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.gestures.detectVerticalDragGestures
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.grid.GridCells
+          import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+          import androidx.compose.foundation.lazy.grid.items
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.text.BasicTextField
+          import androidx.compose.material3.Text
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.draw.drawBehind
+          import androidx.compose.ui.draw.shadow
+          import androidx.compose.ui.geometry.Offset
+          import androidx.compose.ui.geometry.Size
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.ImageBitmap
+          import androidx.compose.ui.graphics.SolidColor
+          import androidx.compose.ui.graphics.asImageBitmap
+          import androidx.compose.ui.graphics.graphicsLayer
+          import androidx.compose.ui.input.pointer.pointerInput
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.res.painterResource
+          import androidx.compose.ui.text.TextStyle
+          import androidx.compose.ui.text.font.FontFamily
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.IntOffset
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.core.graphics.drawable.toBitmap
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.withContext
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          val Red = Color(0xFFFF1F1F)
+
+          enum class ThemeStyle(val label: String) { FLAT("Flat"), GLASS("Glass"), DEPTH("3D"), BLOCK("Craft") }
+
+          data class AppItem(val label: String, val pkg: String, val icon: ImageBitmap)
+
+          fun loadApps(ctx: Context): List<AppItem> {
+              val pm = ctx.packageManager
+              val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+              return pm.queryIntentActivities(i, 0)
+                  .filter { it.activityInfo.packageName != ctx.packageName }
+                  .map { AppItem(it.loadLabel(pm).toString(), it.activityInfo.packageName, it.loadIcon(pm).toBitmap(120, 120).asImageBitmap()) }
+                  .sortedBy { it.label.lowercase() }
+          }
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  enableEdgeToEdge()
+                  setContent { LauncherApp() }
+              }
+          }
+
+          fun Modifier.tile(style: ThemeStyle, tilt: Offset): Modifier = when (style) {
+              ThemeStyle.FLAT -> background(Color(0x26FFFFFF), RoundedCornerShape(6.dp))
+              ThemeStyle.GLASS -> clip(RoundedCornerShape(24.dp))
+                  .background(Brush.verticalGradient(listOf(Color(0x40FFFFFF), Color(0x14FFFFFF))))
+                  .border(1.dp, Brush.verticalGradient(listOf(Color(0x99FFFFFF), Color(0x10FFFFFF))), RoundedCornerShape(24.dp))
+              ThemeStyle.DEPTH -> graphicsLayer {
+                  rotationY = tilt.x * 12f
+                  rotationX = -tilt.y * 12f
+                  cameraDistance = 12f * density
+              }
+                  .shadow(18.dp, RoundedCornerShape(24.dp), ambientColor = Red, spotColor = Red)
+                  .background(Brush.linearGradient(listOf(Color(0xFF2A0808), Color(0xFF0D0D0D))), RoundedCornerShape(24.dp))
+                  .border(1.dp, Color(0x55FF3B3B), RoundedCornerShape(24.dp))
+              ThemeStyle.BLOCK -> drawBehind {
+                  val b = 4.dp.toPx()
+                  drawRect(Color(0xFF7A5230))
+                  drawRect(Color(0xFF9A6B40), size = Size(size.width, b))
+                  drawRect(Color(0xFF9A6B40), size = Size(b, size.height))
+                  drawRect(Color(0xFF4A2F18), topLeft = Offset(0f, size.height - b), size = Size(size.width, b))
+                  drawRect(Color(0xFF4A2F18), topLeft = Offset(size.width - b, 0f), size = Size(b, size.height))
+                  drawRect(Color(0xFF4CAF50), size = Size(size.width, b * 1.6f))
+              }
+          }
+
+          @Composable
+          fun rememberTilt(enabled: Boolean): State<Offset> {
+              val ctx = LocalContext.current
+              val s = remember { mutableStateOf(Offset.Zero) }
+              DisposableEffect(enabled) {
+                  val sm = ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+                  val l = object : SensorEventListener {
+                      override fun onSensorChanged(e: SensorEvent) {
+                          s.value = Offset((e.values[0] / 9.8f).coerceIn(-1f, 1f), (e.values[1] / 9.8f).coerceIn(-1f, 1f))
+                      }
+                      override fun onAccuracyChanged(a: Sensor?, b: Int) {}
+                  }
+                  if (enabled) sm.registerListener(l, sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_UI)
+                  onDispose { sm.unregisterListener(l) }
+              }
+              return s
+          }
+
+          fun launch(ctx: Context, pkg: String) {
+              ctx.packageManager.getLaunchIntentForPackage(pkg)?.let { ctx.startActivity(it) }
+          }
+
+          @Composable
+          fun LauncherApp() {
+              val ctx = LocalContext.current
+              val prefs = remember { ctx.getSharedPreferences("p", 0) }
+              var style by remember {
+                  mutableStateOf(runCatching { ThemeStyle.valueOf(prefs.getString("style", "GLASS")!!) }.getOrDefault(ThemeStyle.GLASS))
+              }
+              var apps by remember { mutableStateOf(emptyList<AppItem>()) }
+              var drawer by remember { mutableStateOf(false) }
+              var query by remember { mutableStateOf("") }
+              var cutout by remember { mutableStateOf(loadCutoutBitmap(ctx)?.asImageBitmap()) }
+              var busy by remember { mutableStateOf(false) }
+              LaunchedEffect(Unit) { apps = withContext(Dispatchers.Default) { loadApps(ctx) } }
+
+              val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                  if (uri != null) {
+                      busy = true
+                      removeBackground(ctx, uri) { ok ->
+                          busy = false
+                          if (ok) cutout = loadCutoutBitmap(ctx)?.asImageBitmap()
+                          else Toast.makeText(ctx, "Background remove failed (needs internet + Play Services first time)", Toast.LENGTH_LONG).show()
+                      }
+                  }
+              }
+              val tilt by rememberTilt(style == ThemeStyle.DEPTH)
+              val font = if (style == ThemeStyle.BLOCK) FontFamily.Monospace else FontFamily.Default
+              val bold = style == ThemeStyle.BLOCK
+              BackHandler(drawer) { drawer = false; query = "" }
+
+              val clock by produceState(Pair("", "")) {
+                  while (true) {
+                      val d = Date()
+                      value = Pair(
+                          SimpleDateFormat("hh:mm", Locale.getDefault()).format(d),
+                          SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(d).uppercase()
+                      )
+                      delay(10_000)
+                  }
+              }
+
+              Box(
+                  Modifier.fillMaxSize()
+                      .background(Brush.verticalGradient(listOf(Color(0x99000000), Color(0x11000000), Color(0xCC000000))))
+                      .systemBarsPadding()
+                      .pointerInput(Unit) { detectVerticalDragGestures { _, dy -> if (dy < -25) drawer = true } }
+              ) {
+                  Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 14.dp)) {
+                      Text(
+                          clock.first, color = Color.White, fontSize = 80.sp, lineHeight = 84.sp,
+                          fontFamily = font, fontWeight = if (bold) FontWeight.Bold else FontWeight.Light
+                      )
+                      Text(clock.second, color = Red, fontSize = 14.sp, letterSpacing = 3.sp, fontFamily = font, fontWeight = FontWeight.Medium)
+
+                      Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                          Box(
+                              Modifier.size(300.dp).background(
+                                  Brush.radialGradient(listOf(Red.copy(alpha = 0.5f), Color.Transparent)), CircleShape
+                              )
+                          )
+                          val c = cutout
+                          if (c != null) {
+                              Image(
+                                  c, null,
+                                  Modifier.fillMaxSize().padding(8.dp).offset {
+                                      if (style == ThemeStyle.DEPTH) IntOffset((tilt.x * -40).toInt(), (tilt.y * 30).toInt()) else IntOffset.Zero
+                                  }
+                              )
+                          } else {
+                              Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                  Image(painterResource(R.drawable.ic_launcher), null, Modifier.size(130.dp))
+                                  Spacer(Modifier.height(10.dp))
+                                  Text("Tap the scissors to add your cutout", color = Color(0x99FFFFFF), fontSize = 12.sp, fontFamily = font)
+                              }
+                          }
+                      }
+
+                      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                          Row(Modifier.weight(1f).tile(style, tilt).padding(4.dp)) {
+                              ThemeStyle.values().forEach { t ->
+                                  val sel = t == style
+                                  Box(
+                                      Modifier.weight(1f)
+                                          .background(if (sel) Red else Color.Transparent, RoundedCornerShape(50))
+                                          .clickable { style = t; prefs.edit().putString("style", t.name).apply() }
+                                          .padding(vertical = 10.dp),
+                                      contentAlignment = Alignment.Center
+                                  ) {
+                                      Text(t.label, color = Color.White, fontSize = 12.sp, fontFamily = font, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+                                  }
+                              }
+                          }
+                          Box(
+                              Modifier.tile(style, tilt)
+                                  .clickable { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                                  .padding(horizontal = 16.dp, vertical = 10.dp),
+                              contentAlignment = Alignment.Center
+                          ) { Text(if (busy) "..." else "✂", color = Color.White, fontSize = 18.sp) }
+                      }
+
+                      Spacer(Modifier.height(12.dp))
+
+                      Row(
+                          Modifier.fillMaxWidth().tile(style, tilt).padding(12.dp),
+                          horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          apps.take(2).forEach { DockIcon(it) }
+                          Box(
+                              Modifier.size(60.dp).background(Brush.radialGradient(listOf(Red.copy(alpha = 0.6f), Color.Transparent)), CircleShape)
+                                  .clickable { drawer = true },
+                              contentAlignment = Alignment.Center
+                          ) { Image(painterResource(R.drawable.ic_launcher), null, Modifier.size(44.dp)) }
+                          apps.drop(2).take(2).forEach { DockIcon(it) }
+                      }
+                  }
+
+                  AnimatedVisibility(
+                      visible = drawer,
+                      enter = slideInVertically { it } + fadeIn(),
+                      exit = slideOutVertically { it } + fadeOut()
+                  ) {
+                      Column(Modifier.fillMaxSize().background(Color(0xF0080808)).padding(16.dp)) {
+                          BasicTextField(
+                              value = query, onValueChange = { query = it }, singleLine = true,
+                              textStyle = TextStyle(color = Color.White, fontSize = 16.sp, fontFamily = font),
+                              cursorBrush = SolidColor(Red),
+                              modifier = Modifier.fillMaxWidth().tile(style, tilt).padding(16.dp),
+                              decorationBox = { inner ->
+                                  if (query.isEmpty()) Text("Search apps", color = Color(0x88FFFFFF), fontSize = 16.sp, fontFamily = font)
+                                  inner()
+                              }
+                          )
+                          Spacer(Modifier.height(12.dp))
+                          LazyVerticalGrid(
+                              GridCells.Fixed(4), Modifier.weight(1f),
+                              horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
+                          ) {
+                              items(apps.filter { it.label.contains(query, ignoreCase = true) }) { app ->
+                                  Column(
+                                      Modifier.tile(style, tilt)
+                                          .clickable { launch(ctx, app.pkg); drawer = false; query = "" }
+                                          .padding(8.dp),
+                                      horizontalAlignment = Alignment.CenterHorizontally
+                                  ) {
+                                      Image(app.icon, app.label, Modifier.size(48.dp))
+                                      Spacer(Modifier.height(4.dp))
+                                      Text(
+                                          app.label, color = Color.White, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                          textAlign = TextAlign.Center, fontFamily = font, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal
+                                      )
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun DockIcon(app: AppItem) {
+              val ctx = LocalContext.current
+              Image(app.icon, app.label, Modifier.size(52.dp).clickable { launch(ctx, app.pkg) })
+          }
+          EOF_FILE
+      - run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with: { name: AestheticLauncher-APK, path: app/build/outputs/apk/debug/app-debug.apk }
